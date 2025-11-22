@@ -1,29 +1,27 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local AutoFarmActive = false
 local HitboxActive = false
-local followingSlayer = nil
-local connection = nil
-local executing = false
 local hitboxConnection = nil
+local originalSizes = {}
 
--- ================== CONFIGURAÇÕES EDITÁVEIS ==================
+-- ================== CONFIGURAÇÕES ==================
 local config = {
-    hitboxSize = 20,  -- Tamanho da hitbox dos NPCs
+    hitboxSize = 20,
+    npcName = "GenericSlayer",  -- Nome do NPC
+    transparency = 0.7,  -- Transparência da hitbox visual
 }
 
--- ================== GUI PRINCIPAL ==================
+-- ================== GUI ==================
 local gui = Instance.new("ScreenGui")
-gui.Name = "AutoFarmGui"
+gui.Name = "HitboxGui"
 gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 150, 0, 120)
-frame.Position = UDim2.new(0, 10, 0.5, -60)
+frame.Size = UDim2.new(0, 200, 0, 180)
+frame.Position = UDim2.new(0.5, -100, 0.5, -90)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
 frame.Parent = gui
@@ -32,61 +30,243 @@ frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 25)
-title.BackgroundTransparency = 1
-title.Text = "AutoFarm"
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+title.Text = "🎯 Hitbox Expander"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.GothamBold
 title.Parent = frame
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
 
+-- Input de tamanho
+local sizeLabel = Instance.new("TextLabel")
+sizeLabel.Size = UDim2.new(1, -20, 0, 20)
+sizeLabel.Position = UDim2.new(0, 10, 0, 40)
+sizeLabel.BackgroundTransparency = 1
+sizeLabel.Text = "Tamanho da Hitbox:"
+sizeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+sizeLabel.TextSize = 12
+sizeLabel.Font = Enum.Font.Gotham
+sizeLabel.TextXAlignment = Enum.TextXAlignment.Left
+sizeLabel.Parent = frame
+
+local sizeInput = Instance.new("TextBox")
+sizeInput.Size = UDim2.new(1, -20, 0, 30)
+sizeInput.Position = UDim2.new(0, 10, 0, 65)
+sizeInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+sizeInput.PlaceholderText = "Tamanho (ex: 20)"
+sizeInput.Text = tostring(config.hitboxSize)
+sizeInput.TextColor3 = Color3.fromRGB(100, 255, 100)
+sizeInput.TextSize = 14
+sizeInput.Font = Enum.Font.GothamBold
+sizeInput.ClearTextOnFocus = false
+sizeInput.Parent = frame
+Instance.new("UICorner", sizeInput).CornerRadius = UDim.new(0, 6)
+
+-- Botão toggle
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
-toggleBtn.Position = UDim2.new(0.1, 0, 0, 30)
+toggleBtn.Size = UDim2.new(1, -20, 0, 35)
+toggleBtn.Position = UDim2.new(0, 10, 0, 105)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-toggleBtn.Text = "OFF"
+toggleBtn.Text = "ATIVAR HITBOX"
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleBtn.TextSize = 16
+toggleBtn.TextSize = 14
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.Parent = frame
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
-local hitboxBtn = Instance.new("TextButton")
-hitboxBtn.Size = UDim2.new(0.8, 0, 0, 35)
-hitboxBtn.Position = UDim2.new(0.1, 0, 0, 75)
-hitboxBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-hitboxBtn.Text = "HITBOX OFF"
-hitboxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-hitboxBtn.TextSize = 14
-hitboxBtn.Font = Enum.Font.GothamBold
-hitboxBtn.Parent = frame
-Instance.new("UICorner", hitboxBtn).CornerRadius = UDim.new(0, 6)
+-- Botão de debug/copiar info
+local debugBtn = Instance.new("TextButton")
+debugBtn.Size = UDim2.new(1, -20, 0, 30)
+debugBtn.Position = UDim2.new(0, 10, 0, 145)
+debugBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+debugBtn.Text = "📋 Copiar Info Debug"
+debugBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+debugBtn.TextSize = 12
+debugBtn.Font = Enum.Font.GothamBold
+debugBtn.Parent = frame
+Instance.new("UICorner", debugBtn).CornerRadius = UDim.new(0, 6)
 
--- ================== GUI EDITOR ==================
-local editorFrame = Instance.new("Frame")
-editorFrame.Name = "EditorFrame"
-editorFrame.Size = UDim2.new(0, 280, 0, 200)
-editorFrame.Position = UDim2.new(0, 170, 0.5, -100)
-editorFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-editorFrame.BorderSizePixel = 0
-editorFrame.Parent = gui
-editorFrame.Active = true
-editorFrame.Draggable = true
-editorFrame.Visible = false
-Instance.new("UICorner", editorFrame).CornerRadius = UDim.new(0, 8)
+-- ================== FUNÇÕES ==================
+local function getRoot(model)
+    return model:FindFirstChild("HumanoidRootPart") 
+        or model:FindFirstChild("Torso") 
+        or model:FindFirstChild("UpperTorso")
+end
 
-local editorTitle = Instance.new("TextLabel")
-editorTitle.Size = UDim2.new(1, 0, 0, 35)
-editorTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-editorTitle.Text = "⚙️ Config Hitbox"
-editorTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-editorTitle.TextSize = 14
-editorTitle.Font = Enum.Font.GothamBold
-editorTitle.Parent = editorFrame
-Instance.new("UICorner", editorTitle).CornerRadius = UDim.new(0, 8)
+local function findAllNPCs()
+    local npcs = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == config.npcName then
+            table.insert(npcs, obj)
+        end
+    end
+    return npcs
+end
 
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -20, 1, -90)
-scrollFrame.Position = UDim2.new(0, 10, 0, 45)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame
+local function expandHitbox(npc)
+    local root = getRoot(npc)
+    if not root then return false end
+    
+    -- Salva tamanho original
+    if not originalSizes[root] then
+        originalSizes[root] = root.Size
+    end
+    
+    -- Expande hitbox
+    local size = tonumber(sizeInput.Text) or config.hitboxSize
+    root.Size = Vector3.new(size, size, size)
+    root.Transparency = config.transparency
+    root.CanCollide = false
+    root.Massless = true
+    
+    -- Adiciona visual (box verde)
+    if not root:FindFirstChild("HitboxVisual") then
+        local visual = Instance.new("SelectionBox")
+        visual.Name = "HitboxVisual"
+        visual.Adornee = root
+        visual.Color3 = Color3.fromRGB(0, 255, 0)
+        visual.LineThickness = 0.05
+        visual.Transparency = 0.5
+        visual.Parent = root
+    end
+    
+    return true
+end
+
+local function restoreHitbox(npc)
+    local root = getRoot(npc)
+    if not root then return end
+    
+    -- Restaura tamanho original
+    if originalSizes[root] then
+        root.Size = originalSizes[root]
+        root.Transparency = 0
+    end
+    
+    -- Remove visual
+    local visual = root:FindFirstChild("HitboxVisual")
+    if visual then
+        visual:Destroy()
+    end
+end
+
+local function startHitbox()
+    hitboxConnection = RunService.Heartbeat:Connect(function()
+        if not HitboxActive then return end
+        
+        local npcs = findAllNPCs()
+        for _, npc in ipairs(npcs) do
+            expandHitbox(npc)
+        end
+    end)
+end
+
+local function stopHitbox()
+    if hitboxConnection then
+        hitboxConnection:Disconnect()
+        hitboxConnection = nil
+    end
+    
+    -- Restaura todos os NPCs
+    local npcs = findAllNPCs()
+    for _, npc in ipairs(npcs) do
+        restoreHitbox(npc)
+    end
+    
+    originalSizes = {}
+end
+
+local function getDebugInfo()
+    local npcs = findAllNPCs()
+    local info = {
+        "========== DEBUG INFO ==========",
+        "NPCs encontrados: " .. #npcs,
+        "Nome procurado: " .. config.npcName,
+        "",
+        "Workspace children:",
+    }
+    
+    -- Lista todos os modelos no workspace
+    local models = {}
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("Model") then
+            table.insert(models, obj.Name)
+        end
+    end
+    table.insert(info, "Total de modelos: " .. #models)
+    table.insert(info, "Nomes: " .. table.concat(models, ", "))
+    table.insert(info, "")
+    
+    -- Info de cada NPC encontrado
+    for i, npc in ipairs(npcs) do
+        table.insert(info, "NPC #" .. i .. ":")
+        table.insert(info, "  Nome: " .. npc.Name)
+        table.insert(info, "  Parent: " .. tostring(npc.Parent))
+        
+        local root = getRoot(npc)
+        if root then
+            table.insert(info, "  Root: " .. root.Name)
+            table.insert(info, "  Size: " .. tostring(root.Size))
+            table.insert(info, "  Pos: " .. tostring(root.Position))
+        else
+            table.insert(info, "  Root: NÃO ENCONTRADO")
+        end
+        
+        -- Lista todas as partes
+        local parts = {}
+        for _, child in ipairs(npc:GetChildren()) do
+            if child:IsA("BasePart") then
+                table.insert(parts, child.Name)
+            end
+        end
+        table.insert(info, "  Partes: " .. table.concat(parts, ", "))
+        table.insert(info, "")
+    end
+    
+    table.insert(info, "================================")
+    return table.concat(info, "\n")
+end
+
+-- ================== EVENTOS ==================
+toggleBtn.MouseButton1Click:Connect(function()
+    HitboxActive = not HitboxActive
+    
+    if HitboxActive then
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        toggleBtn.Text = "DESATIVAR HITBOX"
+        startHitbox()
+        print("Hitbox ativada!")
+    else
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        toggleBtn.Text = "ATIVAR HITBOX"
+        stopHitbox()
+        print("Hitbox desativada!")
+    end
+end)
+
+debugBtn.MouseButton1Click:Connect(function()
+    local info = getDebugInfo()
+    setclipboard(info)
+    print(info)
+    
+    debugBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    debugBtn.Text = "✓ Copiado!"
+    task.wait(1.5)
+    debugBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+    debugBtn.Text = "📋 Copiar Info Debug"
+end)
+
+sizeInput.FocusLost:Connect(function()
+    local newSize = tonumber(sizeInput.Text)
+    if newSize and newSize > 0 then
+        config.hitboxSize = newSize
+        print("Tamanho da hitbox atualizado para:", newSize)
+    else
+        sizeInput.Text = tostring(config.hitboxSize)
+    end
+end)
+
+print("Hitbox Expander carregado!")
+print("Clique em 'Copiar Info Debug' se não funcionar!")
