@@ -109,9 +109,13 @@ local function expandHitbox(npc)
     local root = getRoot(npc)
     if not root then return false end
     
-    -- Salva tamanho original
+    -- Salva tamanho original apenas uma vez
     if not originalSizes[root] then
-        originalSizes[root] = root.Size
+        originalSizes[root] = {
+            size = root.Size,
+            transparency = root.Transparency,
+            canCollide = root.CanCollide
+        }
     end
     
     -- Expande hitbox
@@ -119,17 +123,19 @@ local function expandHitbox(npc)
     root.Size = Vector3.new(size, size, size)
     root.Transparency = config.transparency
     root.CanCollide = false
-    root.Massless = true
     
-    -- Adiciona visual (box verde)
+    -- Adiciona visual (box verde brilhante)
     if not root:FindFirstChild("HitboxVisual") then
         local visual = Instance.new("SelectionBox")
         visual.Name = "HitboxVisual"
         visual.Adornee = root
         visual.Color3 = Color3.fromRGB(0, 255, 0)
-        visual.LineThickness = 0.05
-        visual.Transparency = 0.5
+        visual.LineThickness = 0.1
+        visual.Transparency = 0.3
+        visual.SurfaceTransparency = 0.7
         visual.Parent = root
+        
+        print("✓ Hitbox expandida em:", npc.Name, "| Tamanho:", size)
     end
     
     return true
@@ -139,10 +145,12 @@ local function restoreHitbox(npc)
     local root = getRoot(npc)
     if not root then return end
     
-    -- Restaura tamanho original
+    -- Restaura propriedades originais
     if originalSizes[root] then
-        root.Size = originalSizes[root]
-        root.Transparency = 0
+        root.Size = originalSizes[root].size
+        root.Transparency = originalSizes[root].transparency
+        root.CanCollide = originalSizes[root].canCollide
+        originalSizes[root] = nil
     end
     
     -- Remove visual
@@ -153,12 +161,25 @@ local function restoreHitbox(npc)
 end
 
 local function startHitbox()
+    print("Iniciando expansão de hitbox...")
+    local npcs = findAllNPCs()
+    print("NPCs encontrados:", #npcs)
+    
+    -- Expande todos imediatamente
+    for _, npc in ipairs(npcs) do
+        expandHitbox(npc)
+    end
+    
+    -- Mantém expandindo novos NPCs que aparecerem
     hitboxConnection = RunService.Heartbeat:Connect(function()
         if not HitboxActive then return end
         
-        local npcs = findAllNPCs()
-        for _, npc in ipairs(npcs) do
-            expandHitbox(npc)
+        local currentNpcs = findAllNPCs()
+        for _, npc in ipairs(currentNpcs) do
+            local root = getRoot(npc)
+            if root and not root:FindFirstChild("HitboxVisual") then
+                expandHitbox(npc)
+            end
         end
     end)
 end
