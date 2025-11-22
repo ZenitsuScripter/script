@@ -7,12 +7,6 @@ local AutoFarmActive = false
 local followingSlayer = nil
 local connection = nil
 local executing = false
-local noclipEnabled = false
-local noclipConnection = nil
-
--- CONFIGURAÇÕES
-local TP_DISTANCE = 50        -- Se tiver mais longe que isso, dá TP
-local ATTACK_DISTANCE = 10    -- Só ataca se tiver nessa distância
 
 -- ================== GUI ==================
 local gui = Instance.new("ScreenGui")
@@ -48,7 +42,7 @@ toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.Parent = frame
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
--- ================== FUNÇÕES ORIGINAIS ==================
+-- ================== FUNÇÕES ==================
 local function getRoot(model)
     return model:FindFirstChild("HumanoidRootPart") 
         or model:FindFirstChild("Torso") 
@@ -59,22 +53,6 @@ local function getHealth(model)
     return model:FindFirstChild("Health")
 end
 
-local function pickRandomSlayer()
-    local slayers = {}
-    for _, npc in ipairs(workspace:GetChildren()) do
-        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
-            local root = getRoot(npc)
-            local health = getHealth(npc)
-            if root and health and health.Value > 0 then
-                table.insert(slayers, npc)
-            end
-        end
-    end
-    if #slayers == 0 then return nil end
-    return slayers[math.random(1, #slayers)]
-end
-
--- MELHORIA: Pega o mais próximo em vez de aleatório
 local function pickClosestSlayer()
     local char = LocalPlayer.Character
     if not char then return nil end
@@ -97,7 +75,7 @@ local function pickClosestSlayer()
             end
         end
     end
-    return closest, closestDist
+    return closest
 end
 
 local function executeSlayer()
@@ -118,64 +96,19 @@ local function attackSlayer(npc)
     end
 end
 
--- NOCLIP
-local function enableNoclip()
-    if noclipEnabled then return end
-    noclipEnabled = true
-    
-    noclipConnection = RunService.Stepped:Connect(function()
-        if not noclipEnabled then return end
-        local char = LocalPlayer.Character
-        if not char then return end
-        
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end)
-    print("Noclip ON")
-end
-
-local function disableNoclip()
-    if not noclipEnabled then return end
-    noclipEnabled = false
-    
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
-    
-    -- Restaura colisão
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                part.CanCollide = true
-            end
-        end
-    end
-    print("Noclip OFF")
-end
-
--- MELHORIA: Posição com Lerp pra não tremer
-local lastCFrame = nil
-
 local function getTargetCFrame(root)
     return CFrame.new(root.Position - root.CFrame.LookVector * 2 + Vector3.new(0, 1, 0), root.Position)
 end
 
 local function startAutofarm()
-    lastCFrame = nil
-    
-    connection = RunService.RenderStepped:Connect(function(dt)
+    connection = RunService.Heartbeat:Connect(function()
         if not AutoFarmActive then return end
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         local hrp = char.HumanoidRootPart
 
-        if not followingSlayer then
-            followingSlayer, _ = pickClosestSlayer()
+        if not followingSlayer or not followingSlayer.Parent then
+            followingSlayer = pickClosestSlayer()
             if followingSlayer then
                 print("Now following: " .. followingSlayer.Name)
             else
@@ -190,48 +123,22 @@ local function startAutofarm()
             return 
         end
 
-        -- Calcula posição alvo
+        -- TP direto pro NPC (sem tremor)
         local targetCF = getTargetCFrame(root)
-        local dist = (hrp.Position - root.Position).Magnitude
-
-        -- MELHORIA: TP se muito longe, senão anda com noclip
-        if dist > TP_DISTANCE then
-            enableNoclip()
-            -- Move em direção ao alvo
-            local direction = (targetCF.Position - hrp.Position).Unit
-            hrp.CFrame = hrp.CFrame + direction * 2 -- Move 2 studs por frame
-            return
-        else
-            -- Chegou perto, desativa noclip
-            disableNoclip()
-        end
-
-        -- MELHORIA: Lerp pra suavizar (não treme)
-        if lastCFrame then
-            local lerpSpeed = math.clamp(dt * 15, 0.1, 0.5)
-            hrp.CFrame = lastCFrame:Lerp(targetCF, lerpSpeed)
-            lastCFrame = hrp.CFrame
-        else
-            hrp.CFrame = targetCF
-            lastCFrame = targetCF
-        end
+        hrp.CFrame = targetCF
 
         if health.Value > 0 then
-            -- MELHORIA: Só ataca se tiver perto
-            if dist <= ATTACK_DISTANCE then
-                attackSlayer(followingSlayer)
-            end
+            attackSlayer(followingSlayer)
         else
             if not executing then
                 executing = true
-                -- MELHORIA: Para de mover e executa
+                -- Posiciona perto pra executar
                 hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 2, 0), root.Position)
                 task.wait(0.3)
                 executeSlayer()
                 task.delay(2, function()
                     executing = false
                     followingSlayer = nil
-                    lastCFrame = nil
                 end)
             end
         end
@@ -243,10 +150,8 @@ local function stopAutofarm()
         connection:Disconnect()
         connection = nil
     end
-    disableNoclip()
     followingSlayer = nil
     executing = false
-    lastCFrame = nil
 end
 
 -- ================== TOGGLE ==================
@@ -264,4 +169,4 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("AutoFarm carregado! Clique no botão para ativar.")
+print("AutoFarm carregado!")
