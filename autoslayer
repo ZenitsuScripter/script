@@ -14,9 +14,9 @@ local alignPos, alignOri, attachment = nil, nil, nil
 
 -- CONFIGURAÇÕES (ajuste pro seu jogo)
 local CONFIG = {
-    HEIGHT = 7,              -- Altura acima do NPC
-    FORWARD = 0.5,           -- Levemente na frente
-    ANGLE = -80,             -- Inclinação pra baixo
+    HEIGHT = 6,              -- Altura acima do NPC
+    BACK = 2,                -- Distância ATRÁS do NPC
+    ANGLE = -70,             -- Inclinação pra baixo (menos inclinado pra acertar melhor)
     TP_DIST = 50,            -- Distância pra dar TP
     ATTACK_DIST = 10,        -- Distância pra atacar
     SAFE_RADIUS = 20,        -- Raio seguro pra executar
@@ -218,8 +218,14 @@ local function getFarmPosition(npcRoot)
     local pos = npcRoot.Position
     local look = npcRoot.CFrame.LookVector
     
-    local targetPos = pos + Vector3.new(0, CONFIG.HEIGHT, 0) + (look * CONFIG.FORWARD)
-    local cf = CFrame.new(targetPos, targetPos + look)
+    -- Posição: ACIMA e ATRÁS do NPC
+    local targetPos = pos + Vector3.new(0, CONFIG.HEIGHT, 0) - (look * CONFIG.BACK)
+    
+    -- Olha pro NPC (pra baixo e pra frente)
+    local lookAtPos = pos
+    local cf = CFrame.new(targetPos, lookAtPos)
+    
+    -- Inclina um pouco pra baixo
     return cf * CFrame.Angles(math.rad(CONFIG.ANGLE), 0, 0)
 end
 
@@ -305,7 +311,7 @@ local function mainLoop()
         local targetDist = target.dist
         local targetRoot = target.root
         
-        -- Verifica se ainda tá vivo
+        -- Verifica se ainda tá vivo ANTES de qualquer coisa
         if not isAlive(currentTarget) then
             -- Morreu! Adiciona na fila se não tiver
             local inQueue = false
@@ -330,8 +336,8 @@ local function mainLoop()
         -- Move suave
         moveTo(getFarmPosition(targetRoot))
         
-        -- Ataca só se perto
-        if targetDist <= CONFIG.ATTACK_DIST then
+        -- Ataca só se perto E se tá VIVO
+        if targetDist <= CONFIG.ATTACK_DIST and isAlive(currentTarget) then
             setStatus("Atacando")
             attack(currentTarget)
         else
