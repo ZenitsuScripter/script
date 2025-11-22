@@ -27,7 +27,7 @@ local CONFIG = {
 
 -- ================== GUI ==================
 local gui = Instance.new("ScreenGui")
-gui.Name = "AutoFarmPro"
+gui.Name = "AutoFarmPro v27"
 gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -83,15 +83,27 @@ end
 
 local function getHealth(model)
     local h = model:FindFirstChild("Health")
-    return h and h.Value or 0
+    if h then
+        return h.Value
+    end
+    -- Tenta Humanoid também
+    local hum = model:FindFirstChild("Humanoid")
+    if hum then
+        return hum.Health
+    end
+    return 0
 end
 
 local function isAlive(model)
-    return model and model.Parent and getHealth(model) > 0
+    if not model or not model.Parent then return false end
+    local hp = getHealth(model)
+    return hp > 0
 end
 
 local function isDead(model)
-    return model and model.Parent and getHealth(model) <= 0
+    if not model or not model.Parent then return false end
+    local hp = getHealth(model)
+    return hp <= 0
 end
 
 local function dist(a, b)
@@ -144,11 +156,18 @@ local function hasAliveNear(position, radius)
     return false
 end
 
--- Pega o melhor alvo vivo (prioriza quem tá perto/te atacando)
+-- Pega o melhor alvo vivo (prioriza quem tá perto)
 local function getBestTarget()
     local alive, _ = getAllSlayers()
     if #alive == 0 then return nil end
-    return alive[1] -- Mais próximo
+    
+    -- Retorna só se realmente tiver vivo
+    for _, data in ipairs(alive) do
+        if isAlive(data.npc) then
+            return data
+        end
+    end
+    return nil
 end
 
 -- Pega slayer morto que pode ser executado (sem vivos perto)
@@ -254,6 +273,7 @@ local function doExecution(data)
         return false 
     end
     
+    print("Iniciando execução...")
     setStatus("Executando...")
     
     -- Desativa movimento suave
@@ -264,10 +284,12 @@ local function doExecution(data)
     local executePos = data.pos + Vector3.new(0, 2, 0)
     hrp.CFrame = CFrame.new(executePos, data.pos)
     
-    task.wait(0.2)
+    print("Teleportou pra posição de execução")
+    task.wait(0.3)
     
     -- Verifica se ainda tá seguro (sem vivo perto)
     if hasAliveNear(data.pos, CONFIG.SAFE_RADIUS) then
+        print("Execução cancelada - tem vivo perto!")
         setStatus("Interrompido!")
         if alignPos then alignPos.Enabled = true end
         if alignOri then alignOri.Enabled = true end
@@ -276,8 +298,9 @@ local function doExecution(data)
     end
     
     -- Executa
+    print("Chamando remote de execução...")
     execute()
-    print("Executado!")
+    print("Executado com sucesso!")
     
     task.wait(CONFIG.EXECUTE_WAIT)
     
@@ -303,27 +326,32 @@ local function mainLoop()
     
     local myPos = hrp.Position
     
-    -- PRIORIDADE 1: Matar slayers vivos
-    local target = getBestTarget()
-    
-    if target then
-        currentTarget = target.npc
-        local targetDist = target.dist
-        local targetRoot = target.root
-        
-        -- Verifica se ainda tá vivo ANTES de qualquer coisa
-        if not isAlive(currentTarget) then
-            -- Morreu! Adiciona na fila se não tiver
-            local inQueue = false
-            for _, q in ipairs(executionQueue) do
-                if q.npc == currentTarget then inQueue = true break end
-            end
-            if not inQueue then
-                table.insert(executionQueue, {npc = currentTarget, pos = targetRoot.Position})
+    -- Se tem alvo atual, verifica se morreu
+    if currentTarget then
+        if isDead(currentTarget) then
+            print("Alvo morreu! Adicionando na fila...")
+            local root = getRoot(currentTarget)
+            if root then
+                local inQueue = false
+                for _, q in ipairs(executionQueue) do
+                    if q.npc == currentTarget then inQueue = true break end
+                end
+                if not inQueue then
+                    table.insert(executionQueue, {npc = currentTarget, pos = root.Position})
+                end
             end
             currentTarget = nil
             return
         end
+    end
+    
+    -- PRIORIDADE 1: Matar slayers vivos
+    local target = getBestTarget()
+    
+    if target and isAlive(target.npc) then
+        currentTarget = target.npc
+        local targetDist = target.dist
+        local targetRoot = target.root
         
         -- TP se muito longe
         if targetDist > CONFIG.TP_DIST then
@@ -336,8 +364,8 @@ local function mainLoop()
         -- Move suave
         moveTo(getFarmPosition(targetRoot))
         
-        -- Ataca só se perto E se tá VIVO
-        if targetDist <= CONFIG.ATTACK_DIST and isAlive(currentTarget) then
+        -- Ataca só se perto E vivo
+        if targetDist <= CONFIG.ATTACK_DIST then
             setStatus("Atacando")
             attack(currentTarget)
         else
@@ -347,14 +375,23 @@ local function mainLoop()
         return
     end
     
+    -- Se chegou aqui, não tem vivo pra atacar
+    currentTarget = nil
+    
     -- PRIORIDADE 2: Executar mortos da fila
-    for i, data in ipairs(executionQueue) do
-        if isDead(data.npc) and not hasAliveNear(data.pos, CONFIG.SAFE_RADIUS) then
-            table.remove(executionQueue, i)
-            doExecution(data)
-            return
-        elseif not data.npc.Parent then
-            table.remove(executionQueue, i)
+    if #executionQueue > 0 then
+        local data = executionQueue[1]
+        if data.npc and data.npc.Parent and isDead(data.npc) then
+            if not hasAliveNear(data.pos, CONFIG.SAFE_RADIUS) then
+                table.remove(executionQueue, 1)
+                doExecution(data)
+                return
+            else
+                setStatus("Área não segura...")
+                return
+            end
+        else
+            table.remove(executionQueue, 1)
             return
         end
     end
@@ -368,7 +405,6 @@ local function mainLoop()
     
     -- Nada pra fazer
     setStatus("Procurando...")
-    currentTarget = nil
 end
 
 -- ================== CONTROLE ==================
