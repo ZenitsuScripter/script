@@ -8,10 +8,17 @@ local followingSlayer = nil
 local connection = nil
 local executing = false
 
--- CONFIGURAÇÕES (ajuste conforme necessário)
-local HEIGHT_OFFSET = 6        -- altura acima do NPC
-local HORIZONTAL_OFFSET = 2    -- distância lateral
-local ROTATION_ANGLE = 90      -- ângulo de rotação (90° = olhando pro lado)
+-- Objetos de movimento suave
+local alignPos = nil
+local alignOri = nil
+local attachment = nil
+
+-- CONFIGURAÇÕES
+local HEIGHT_OFFSET = 7
+local FORWARD_OFFSET = 0.5
+local LOOK_DOWN_ANGLE = -80
+local MOVE_SPEED = 50          -- velocidade do movimento (maior = mais rápido)
+local RESPONSIVENESS = 25      -- responsividade da rotação
 
 -- ================== GUI ==================
 local ScreenGui = Instance.new("ScreenGui")
@@ -33,7 +40,7 @@ UICorner.Parent = Frame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 25)
 Title.BackgroundTransparency = 1
-Title.Text = "AutoFarm"
+Title.Text = "AutoFarm v3"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 14
 Title.Font = Enum.Font.GothamBold
@@ -106,35 +113,79 @@ local function attackSlayer(npc)
     end
 end
 
--- Calcula a posição ideal: ACIMA do NPC + rotacionado 90°
-local function getOptimalCFrame(npcRoot)
+-- Cria os objetos de movimento suave
+local function setupSmoothMovement(hrp)
+    -- Remove antigos se existirem
+    if attachment then attachment:Destroy() end
+    if alignPos then alignPos:Destroy() end
+    if alignOri then alignOri:Destroy() end
+    
+    -- Attachment no HRP
+    attachment = Instance.new("Attachment")
+    attachment.Name = "AutoFarmAttachment"
+    attachment.Parent = hrp
+    
+    -- AlignPosition - controla posição suave
+    alignPos = Instance.new("AlignPosition")
+    alignPos.Name = "AutoFarmAlignPos"
+    alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
+    alignPos.Attachment0 = attachment
+    alignPos.MaxForce = 100000
+    alignPos.MaxVelocity = MOVE_SPEED
+    alignPos.Responsiveness = RESPONSIVENESS
+    alignPos.Parent = hrp
+    
+    -- AlignOrientation - controla rotação suave
+    alignOri = Instance.new("AlignOrientation")
+    alignOri.Name = "AutoFarmAlignOri"
+    alignOri.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    alignOri.Attachment0 = attachment
+    alignOri.MaxTorque = 100000
+    alignOri.Responsiveness = RESPONSIVENESS
+    alignOri.Parent = hrp
+end
+
+-- Remove os objetos de movimento
+local function removeSmoothMovement()
+    if attachment then attachment:Destroy() attachment = nil end
+    if alignPos then alignPos:Destroy() alignPos = nil end
+    if alignOri then alignOri:Destroy() alignOri = nil end
+end
+
+-- Calcula a posição/rotação ideal
+local function getTargetCFrame(npcRoot)
     local npcPos = npcRoot.Position
+    local npcLook = npcRoot.CFrame.LookVector
     
-    -- Posição: acima do NPC + levemente pro lado
-    local offset = Vector3.new(HORIZONTAL_OFFSET, HEIGHT_OFFSET, 0)
-    local targetPos = npcPos + offset
+    local targetPos = npcPos + Vector3.new(0, HEIGHT_OFFSET, 0) + (npcLook * FORWARD_OFFSET)
+    local baseCFrame = CFrame.new(targetPos, targetPos + npcLook)
+    local finalCFrame = baseCFrame * CFrame.Angles(math.rad(LOOK_DOWN_ANGLE), 0, 0)
     
-    -- Rotação: olhando pro NPC mas rotacionado 90° no eixo Y
-    -- Isso faz você olhar "de lado" enquanto ainda mira no NPC
-    local lookAt = npcPos
-    local baseCFrame = CFrame.new(targetPos, lookAt)
-    
-    -- Rotaciona 90° no eixo Y local (olhando pro lado)
-    local rotatedCFrame = baseCFrame * CFrame.Angles(0, math.rad(ROTATION_ANGLE), 0)
-    
-    return rotatedCFrame
+    return finalCFrame
 end
 
 local function startAutofarm()
-    connection = RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    setupSmoothMovement(hrp)
+    
+    connection = RunService.Heartbeat:Connect(function()
         if not AutoFarmActive then return end
         
         local char = LocalPlayer.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
+        
+        -- Recria se morreu/respawnou
+        if not alignPos or not alignPos.Parent then
+            setupSmoothMovement(hrp)
+        end
 
-        -- Pega novo alvo se não tiver ou se o atual morreu
+        -- Pega novo alvo
         if not followingSlayer or not followingSlayer.Parent then
             followingSlayer = pickClosestSlayer()
             if followingSlayer then
@@ -151,8 +202,10 @@ local function startAutofarm()
             return
         end
 
-        -- Posiciona ACIMA e ROTACIONADO 90°
-        hrp.CFrame = getOptimalCFrame(root)
+        -- Atualiza posição/rotação alvo
+        local targetCF = getTargetCFrame(root)
+        alignPos.Position = targetCF.Position
+        alignOri.CFrame = targetCF
 
         if health.Value > 0 then
             attackSlayer(followingSlayer)
@@ -174,6 +227,7 @@ local function stopAutofarm()
         connection:Disconnect()
         connection = nil
     end
+    removeSmoothMovement()
     followingSlayer = nil
     executing = false
 end
@@ -193,4 +247,16 @@ ToggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("AutoFarm carregado! Clique no botão para ativar.")
+-- Limpa quando o personagem morre
+LocalPlayer.CharacterAdded:Connect(function()
+    if AutoFarmActive then
+        task.wait(1)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            setupSmoothMovement(hrp)
+        end
+    end
+end)
+
+print("AutoFarm v3 (Smooth) carregado! Clique no botão para ativar.")
