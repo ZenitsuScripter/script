@@ -4,26 +4,15 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AutoFarmActive = false
+local HitboxActive = false
 local followingSlayer = nil
 local connection = nil
 local executing = false
+local hitboxConnection = nil
 
 -- ================== CONFIGURAÇÕES EDITÁVEIS ==================
 local config = {
-    -- Posição relativa ao NPC
-    offsetX = 0,         -- Esquerda/Direita
-    offsetY = 1,         -- Altura
-    offsetZ = -2,        -- Frente/Trás (negativo = na frente)
-    
-    -- Execução
-    executeOffsetX = 0,
-    executeOffsetY = 2,
-    executeOffsetZ = 0,
-    executeWaitTime = 0.3,
-    executeCooldown = 2,
-    
-    -- Comportamento
-    followRange = 100,
+    hitboxSize = 20,  -- Tamanho da hitbox dos NPCs
 }
 
 -- ================== GUI PRINCIPAL ==================
@@ -33,8 +22,8 @@ gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 150, 0, 80)
-frame.Position = UDim2.new(0, 10, 0.5, -40)
+frame.Size = UDim2.new(0, 150, 0, 120)
+frame.Position = UDim2.new(0, 10, 0.5, -60)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
 frame.Parent = gui
@@ -53,7 +42,7 @@ title.Parent = frame
 
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
-toggleBtn.Position = UDim2.new(0.1, 0, 0, 35)
+toggleBtn.Position = UDim2.new(0.1, 0, 0, 30)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 toggleBtn.Text = "OFF"
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -62,11 +51,22 @@ toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.Parent = frame
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
+local hitboxBtn = Instance.new("TextButton")
+hitboxBtn.Size = UDim2.new(0.8, 0, 0, 35)
+hitboxBtn.Position = UDim2.new(0.1, 0, 0, 75)
+hitboxBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+hitboxBtn.Text = "HITBOX OFF"
+hitboxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitboxBtn.TextSize = 14
+hitboxBtn.Font = Enum.Font.GothamBold
+hitboxBtn.Parent = frame
+Instance.new("UICorner", hitboxBtn).CornerRadius = UDim.new(0, 6)
+
 -- ================== GUI EDITOR ==================
 local editorFrame = Instance.new("Frame")
 editorFrame.Name = "EditorFrame"
-editorFrame.Size = UDim2.new(0, 280, 0, 420)
-editorFrame.Position = UDim2.new(0, 170, 0.5, -210)
+editorFrame.Size = UDim2.new(0, 280, 0, 200)
+editorFrame.Position = UDim2.new(0, 170, 0.5, -100)
 editorFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 editorFrame.BorderSizePixel = 0
 editorFrame.Parent = gui
@@ -78,7 +78,7 @@ Instance.new("UICorner", editorFrame).CornerRadius = UDim.new(0, 8)
 local editorTitle = Instance.new("TextLabel")
 editorTitle.Size = UDim2.new(1, 0, 0, 35)
 editorTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-editorTitle.Text = "⚙️ Config de Posição"
+editorTitle.Text = "⚙️ Config Hitbox"
 editorTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 editorTitle.TextSize = 14
 editorTitle.Font = Enum.Font.GothamBold
@@ -89,331 +89,4 @@ local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Size = UDim2.new(1, -20, 1, -90)
 scrollFrame.Position = UDim2.new(0, 10, 0, 45)
 scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 6
-scrollFrame.Parent = editorFrame
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 8)
-listLayout.Parent = scrollFrame
-
--- ================== FUNÇÕES DO EDITOR ==================
-local function createSection(parent, text)
-    local section = Instance.new("TextLabel")
-    section.Size = UDim2.new(1, 0, 0, 25)
-    section.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    section.Text = text
-    section.TextColor3 = Color3.fromRGB(100, 200, 255)
-    section.TextSize = 13
-    section.Font = Enum.Font.GothamBold
-    section.TextXAlignment = Enum.TextXAlignment.Center
-    section.Parent = parent
-    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 4)
-    return section
-end
-
-local function createInput(parent, labelText, defaultValue)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 35)
-    container.BackgroundTransparency = 1
-    container.Parent = parent
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.6, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = labelText
-    label.TextColor3 = Color3.fromRGB(220, 220, 220)
-    label.TextSize = 12
-    label.Font = Enum.Font.Gotham
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = container
-    
-    local input = Instance.new("TextBox")
-    input.Size = UDim2.new(0.35, 0, 0, 30)
-    input.Position = UDim2.new(0.63, 0, 0, 3)
-    input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    input.PlaceholderText = "0"
-    input.Text = tostring(defaultValue)
-    input.TextColor3 = Color3.fromRGB(100, 255, 100)
-    input.TextSize = 14
-    input.Font = Enum.Font.GothamBold
-    input.ClearTextOnFocus = false
-    input.Parent = container
-    Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
-    
-    return {
-        getValue = function()
-            return tonumber(input.Text) or defaultValue
-        end,
-        input = input
-    }
-end
-
--- Criar inputs
-createSection(scrollFrame, "📍 POSIÇÃO DE ATAQUE")
-local offsetXInput = createInput(scrollFrame, "X (Esquerda/Direita)", config.offsetX)
-local offsetYInput = createInput(scrollFrame, "Y (Altura)", config.offsetY)
-local offsetZInput = createInput(scrollFrame, "Z (Frente/Trás)", config.offsetZ)
-
-local infoLabel1 = Instance.new("TextLabel")
-infoLabel1.Size = UDim2.new(1, 0, 0, 35)
-infoLabel1.BackgroundTransparency = 1
-infoLabel1.Text = "💡 Z negativo = na frente\nZ positivo = atrás"
-infoLabel1.TextColor3 = Color3.fromRGB(150, 150, 150)
-infoLabel1.TextSize = 10
-infoLabel1.Font = Enum.Font.Gotham
-infoLabel1.TextWrapped = true
-infoLabel1.Parent = scrollFrame
-
-createSection(scrollFrame, "⚔️ POSIÇÃO DE EXECUÇÃO")
-local execXInput = createInput(scrollFrame, "X (Esquerda/Direita)", config.executeOffsetX)
-local execYInput = createInput(scrollFrame, "Y (Altura)", config.executeOffsetY)
-local execZInput = createInput(scrollFrame, "Z (Frente/Trás)", config.executeOffsetZ)
-
-createSection(scrollFrame, "⏱️ TIMING")
-local execWaitInput = createInput(scrollFrame, "Delay execução (s)", config.executeWaitTime)
-local execCooldownInput = createInput(scrollFrame, "Cooldown (s)", config.executeCooldown)
-
-createSection(scrollFrame, "🎯 ALCANCE")
-local followRangeInput = createInput(scrollFrame, "Distância máxima", config.followRange)
-
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
-listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
-end)
-
--- Botões do editor
-local btnContainer = Instance.new("Frame")
-btnContainer.Size = UDim2.new(1, -20, 0, 35)
-btnContainer.Position = UDim2.new(0, 10, 1, -45)
-btnContainer.BackgroundTransparency = 1
-btnContainer.Parent = editorFrame
-
-local applyBtn = Instance.new("TextButton")
-applyBtn.Size = UDim2.new(0.48, 0, 1, 0)
-applyBtn.Position = UDim2.new(0, 0, 0, 0)
-applyBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
-applyBtn.Text = "✓ Aplicar"
-applyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-applyBtn.TextSize = 13
-applyBtn.Font = Enum.Font.GothamBold
-applyBtn.Parent = btnContainer
-Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 6)
-
-local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.new(0.48, 0, 1, 0)
-copyBtn.Position = UDim2.new(0.52, 0, 0, 0)
-copyBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
-copyBtn.Text = "📋 Copiar"
-copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyBtn.TextSize = 13
-copyBtn.Font = Enum.Font.GothamBold
-copyBtn.Parent = btnContainer
-Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
-
--- Botão de abrir editor
-local editBtn = Instance.new("TextButton")
-editBtn.Size = UDim2.new(0, 20, 0, 20)
-editBtn.Position = UDim2.new(1, -25, 0, 3)
-editBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-editBtn.Text = "⚙️"
-editBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-editBtn.TextSize = 12
-editBtn.Parent = frame
-Instance.new("UICorner", editBtn).CornerRadius = UDim.new(0, 4)
-
-editBtn.MouseButton1Click:Connect(function()
-    editorFrame.Visible = not editorFrame.Visible
-end)
-
--- Aplicar mudanças
-applyBtn.MouseButton1Click:Connect(function()
-    config.offsetX = offsetXInput.getValue()
-    config.offsetY = offsetYInput.getValue()
-    config.offsetZ = offsetZInput.getValue()
-    config.executeOffsetX = execXInput.getValue()
-    config.executeOffsetY = execYInput.getValue()
-    config.executeOffsetZ = execZInput.getValue()
-    config.executeWaitTime = execWaitInput.getValue()
-    config.executeCooldown = execCooldownInput.getValue()
-    config.followRange = followRangeInput.getValue()
-    
-    applyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    applyBtn.Text = "✓ Aplicado!"
-    print("Config atualizada!")
-    task.wait(1)
-    applyBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
-    applyBtn.Text = "✓ Aplicar"
-end)
-
--- Copiar configurações
-copyBtn.MouseButton1Click:Connect(function()
-    local configStr = string.format([[
-offsetX = %.1f,
-offsetY = %.1f,
-offsetZ = %.1f,
-executeOffsetX = %.1f,
-executeOffsetY = %.1f,
-executeOffsetZ = %.1f,
-executeWaitTime = %.1f,
-executeCooldown = %.1f,
-followRange = %d]],
-        config.offsetX, config.offsetY, config.offsetZ,
-        config.executeOffsetX, config.executeOffsetY, config.executeOffsetZ,
-        config.executeWaitTime, config.executeCooldown, config.followRange
-    )
-    
-    setclipboard(configStr)
-    copyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-    copyBtn.Text = "✓ Copiado!"
-    print("\n========== CONFIG ==========")
-    print(configStr)
-    print("============================\n")
-    task.wait(1.5)
-    copyBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
-    copyBtn.Text = "📋 Copiar"
-end)
-
--- ================== FUNÇÕES DO AUTOFARM ==================
-local function getRoot(model)
-    return model:FindFirstChild("HumanoidRootPart") 
-        or model:FindFirstChild("Torso") 
-        or model:FindFirstChild("UpperTorso")
-end
-
-local function getHealth(model)
-    return model:FindFirstChild("Health")
-end
-
-local function pickClosestSlayer()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    
-    local closest = nil
-    local closestDist = math.huge
-    
-    for _, npc in ipairs(workspace:GetChildren()) do
-        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
-            local root = getRoot(npc)
-            local health = getHealth(npc)
-            if root and health and health.Value > 0 then
-                local dist = (root.Position - hrp.Position).Magnitude
-                if dist < closestDist and dist <= config.followRange then
-                    closestDist = dist
-                    closest = npc
-                end
-            end
-        end
-    end
-    return closest
-end
-
-local function executeSlayer()
-    if not followingSlayer then return end
-    local args = {"Character", "Execute"}
-    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Sync")
-    remote:InvokeServer(unpack(args))
-    print("Executado:", followingSlayer.Name)
-end
-
-local function attackSlayer(npc)
-    if executing then return end
-    local attackRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Async")
-    if npc:FindFirstChild("Block") then
-        attackRemote:FireServer("Katana", "Heavy")
-    else
-        attackRemote:FireServer("Katana", "Server")
-    end
-end
-
-local function getTargetCFrame(root)
-    -- Calcula posição baseada no offset XYZ relativo ao NPC
-    local npcCFrame = root.CFrame
-    local offset = Vector3.new(config.offsetX, config.offsetY, config.offsetZ)
-    local worldOffset = npcCFrame:VectorToWorldSpace(offset)
-    local targetPos = root.Position + worldOffset
-    
-    return CFrame.new(targetPos, root.Position)
-end
-
-local function getExecuteCFrame(root)
-    local npcCFrame = root.CFrame
-    local offset = Vector3.new(config.executeOffsetX, config.executeOffsetY, config.executeOffsetZ)
-    local worldOffset = npcCFrame:VectorToWorldSpace(offset)
-    local targetPos = root.Position + worldOffset
-    
-    return CFrame.new(targetPos, root.Position)
-end
-
-local function startAutofarm()
-    connection = RunService.Heartbeat:Connect(function()
-        if not AutoFarmActive then return end
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = char.HumanoidRootPart
-
-        if not followingSlayer or not followingSlayer.Parent then
-            followingSlayer = pickClosestSlayer()
-            if followingSlayer then
-                print("Seguindo:", followingSlayer.Name)
-            else
-                return
-            end
-        end
-
-        local root = getRoot(followingSlayer)
-        local health = getHealth(followingSlayer)
-        if not root or not health then 
-            followingSlayer = nil
-            return 
-        end
-
-        local targetCF = getTargetCFrame(root)
-        hrp.CFrame = targetCF
-
-        if health.Value > 0 then
-            attackSlayer(followingSlayer)
-        else
-            if not executing then
-                executing = true
-                local execCF = getExecuteCFrame(root)
-                hrp.CFrame = execCF
-                task.wait(config.executeWaitTime)
-                executeSlayer()
-                task.delay(config.executeCooldown, function()
-                    executing = false
-                    followingSlayer = nil
-                end)
-            end
-        end
-    end)
-end
-
-local function stopAutofarm()
-    if connection then
-        connection:Disconnect()
-        connection = nil
-    end
-    followingSlayer = nil
-    executing = false
-end
-
--- ================== TOGGLE AUTOFARM ==================
-toggleBtn.MouseButton1Click:Connect(function()
-    AutoFarmActive = not AutoFarmActive
-    
-    if AutoFarmActive then
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        toggleBtn.Text = "ON"
-        startAutofarm()
-    else
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        toggleBtn.Text = "OFF"
-        stopAutofarm()
-    end
-end)
-
-print("AutoFarm carregado!")
-print("Clique no ⚙️ pra editar posições!")
+scrollFrame
