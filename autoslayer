@@ -1,0 +1,196 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local AutoFarmActive = false
+local followingSlayer = nil
+local connection = nil
+local executing = false
+
+-- CONFIGURAÇÕES (ajuste conforme necessário)
+local HEIGHT_OFFSET = 6        -- altura acima do NPC
+local HORIZONTAL_OFFSET = 2    -- distância lateral
+local ROTATION_ANGLE = 90      -- ângulo de rotação (90° = olhando pro lado)
+
+-- ================== GUI ==================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoFarmGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 150, 0, 80)
+Frame.Position = UDim2.new(0, 10, 0.5, -40)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.BackgroundTransparency = 1
+Title.Text = "AutoFarm"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Frame
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
+ToggleBtn.Position = UDim2.new(0.1, 0, 0, 35)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleBtn.Text = "OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 16
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Parent = Frame
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 6)
+BtnCorner.Parent = ToggleBtn
+
+-- ================== FUNÇÕES ==================
+local function getRoot(model)
+    return model:FindFirstChild("HumanoidRootPart") 
+        or model:FindFirstChild("Torso") 
+        or model:FindFirstChild("UpperTorso")
+end
+
+local function getHealth(model)
+    return model:FindFirstChild("Health")
+end
+
+local function pickClosestSlayer()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    
+    local closest = nil
+    local closestDist = math.huge
+    
+    for _, npc in ipairs(workspace:GetChildren()) do
+        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
+            local root = getRoot(npc)
+            local health = getHealth(npc)
+            if root and health and health.Value > 0 then
+                local dist = (root.Position - hrp.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closest = npc
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function executeSlayer()
+    if not followingSlayer then return end
+    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Sync")
+    remote:InvokeServer("Character", "Execute")
+    print("Executed:", followingSlayer.Name)
+end
+
+local function attackSlayer(npc)
+    if executing then return end
+    local attackRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Async")
+    if npc:FindFirstChild("Block") then
+        attackRemote:FireServer("Katana", "Heavy")
+    else
+        attackRemote:FireServer("Katana", "Server")
+    end
+end
+
+-- Calcula a posição ideal: ACIMA do NPC + rotacionado 90°
+local function getOptimalCFrame(npcRoot)
+    local npcPos = npcRoot.Position
+    
+    -- Posição: acima do NPC + levemente pro lado
+    local offset = Vector3.new(HORIZONTAL_OFFSET, HEIGHT_OFFSET, 0)
+    local targetPos = npcPos + offset
+    
+    -- Rotação: olhando pro NPC mas rotacionado 90° no eixo Y
+    -- Isso faz você olhar "de lado" enquanto ainda mira no NPC
+    local lookAt = npcPos
+    local baseCFrame = CFrame.new(targetPos, lookAt)
+    
+    -- Rotaciona 90° no eixo Y local (olhando pro lado)
+    local rotatedCFrame = baseCFrame * CFrame.Angles(0, math.rad(ROTATION_ANGLE), 0)
+    
+    return rotatedCFrame
+end
+
+local function startAutofarm()
+    connection = RunService.RenderStepped:Connect(function()
+        if not AutoFarmActive then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- Pega novo alvo se não tiver ou se o atual morreu
+        if not followingSlayer or not followingSlayer.Parent then
+            followingSlayer = pickClosestSlayer()
+            if followingSlayer then
+                print("Seguindo:", followingSlayer.Name)
+            end
+            return
+        end
+
+        local root = getRoot(followingSlayer)
+        local health = getHealth(followingSlayer)
+        
+        if not root or not health then
+            followingSlayer = nil
+            return
+        end
+
+        -- Posiciona ACIMA e ROTACIONADO 90°
+        hrp.CFrame = getOptimalCFrame(root)
+
+        if health.Value > 0 then
+            attackSlayer(followingSlayer)
+        else
+            if not executing then
+                executing = true
+                executeSlayer()
+                task.delay(2, function()
+                    executing = false
+                    followingSlayer = nil
+                end)
+            end
+        end
+    end)
+end
+
+local function stopAutofarm()
+    if connection then
+        connection:Disconnect()
+        connection = nil
+    end
+    followingSlayer = nil
+    executing = false
+end
+
+-- ================== TOGGLE ==================
+ToggleBtn.MouseButton1Click:Connect(function()
+    AutoFarmActive = not AutoFarmActive
+    
+    if AutoFarmActive then
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        ToggleBtn.Text = "ON"
+        startAutofarm()
+    else
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        ToggleBtn.Text = "OFF"
+        stopAutofarm()
+    end
+end)
+
+print("AutoFarm carregado! Clique no botão para ativar.")
