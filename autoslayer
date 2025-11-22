@@ -10,17 +10,20 @@ local executing = false
 
 -- ================== CONFIGURAÇÕES EDITÁVEIS ==================
 local config = {
-    -- Distância do NPC
-    attackDistance = 2,  -- Quantos studs na frente do NPC
-    attackHeight = 1,    -- Altura acima do chão
+    -- Posição relativa ao NPC
+    offsetX = 0,         -- Esquerda/Direita
+    offsetY = 1,         -- Altura
+    offsetZ = -2,        -- Frente/Trás (negativo = na frente)
     
     -- Execução
-    executeHeight = 2,   -- Altura ao executar
-    executeWaitTime = 0.3,  -- Tempo de espera antes de executar
-    executeCooldown = 2,    -- Tempo após executar
+    executeOffsetX = 0,
+    executeOffsetY = 2,
+    executeOffsetZ = 0,
+    executeWaitTime = 0.3,
+    executeCooldown = 2,
     
     -- Comportamento
-    followRange = 100,   -- Distância máxima pra seguir NPC
+    followRange = 100,
 }
 
 -- ================== GUI PRINCIPAL ==================
@@ -62,8 +65,8 @@ Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 -- ================== GUI EDITOR ==================
 local editorFrame = Instance.new("Frame")
 editorFrame.Name = "EditorFrame"
-editorFrame.Size = UDim2.new(0, 280, 0, 400)
-editorFrame.Position = UDim2.new(0, 170, 0.5, -200)
+editorFrame.Size = UDim2.new(0, 280, 0, 420)
+editorFrame.Position = UDim2.new(0, 170, 0.5, -210)
 editorFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 editorFrame.BorderSizePixel = 0
 editorFrame.Parent = gui
@@ -75,7 +78,7 @@ Instance.new("UICorner", editorFrame).CornerRadius = UDim.new(0, 8)
 local editorTitle = Instance.new("TextLabel")
 editorTitle.Size = UDim2.new(1, 0, 0, 35)
 editorTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-editorTitle.Text = "⚙️ Config de Combate"
+editorTitle.Text = "⚙️ Config de Posição"
 editorTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 editorTitle.TextSize = 14
 editorTitle.Font = Enum.Font.GothamBold
@@ -91,7 +94,7 @@ scrollFrame.ScrollBarThickness = 6
 scrollFrame.Parent = editorFrame
 
 local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 10)
+listLayout.Padding = UDim.new(0, 8)
 listLayout.Parent = scrollFrame
 
 -- ================== FUNÇÕES DO EDITOR ==================
@@ -103,136 +106,76 @@ local function createSection(parent, text)
     section.TextColor3 = Color3.fromRGB(100, 200, 255)
     section.TextSize = 13
     section.Font = Enum.Font.GothamBold
-    section.TextXAlignment = Enum.TextXAlignment.Left
     section.TextXAlignment = Enum.TextXAlignment.Center
     section.Parent = parent
     Instance.new("UICorner", section).CornerRadius = UDim.new(0, 4)
     return section
 end
 
-local function createSlider(parent, labelText, min, max, defaultValue, decimals)
+local function createInput(parent, labelText, defaultValue)
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 50)
+    container.Size = UDim2.new(1, 0, 0, 35)
     container.BackgroundTransparency = 1
     container.Parent = parent
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.6, 0, 0, 20)
+    label.Size = UDim2.new(0.6, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = labelText
     label.TextColor3 = Color3.fromRGB(220, 220, 220)
-    label.TextSize = 11
+    label.TextSize = 12
     label.Font = Enum.Font.Gotham
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = container
     
     local input = Instance.new("TextBox")
-    input.Size = UDim2.new(0.35, 0, 0, 28)
-    input.Position = UDim2.new(0.63, 0, 0, 0)
+    input.Size = UDim2.new(0.35, 0, 0, 30)
+    input.Position = UDim2.new(0.63, 0, 0, 3)
     input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    input.PlaceholderText = "Valor"
+    input.PlaceholderText = "0"
     input.Text = tostring(defaultValue)
     input.TextColor3 = Color3.fromRGB(100, 255, 100)
-    input.TextSize = 13
+    input.TextSize = 14
     input.Font = Enum.Font.GothamBold
     input.ClearTextOnFocus = false
     input.Parent = container
     Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
     
-    local sliderBg = Instance.new("Frame")
-    sliderBg.Size = UDim2.new(1, 0, 0, 10)
-    sliderBg.Position = UDim2.new(0, 0, 0, 33)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    sliderBg.BorderSizePixel = 0
-    sliderBg.Parent = container
-    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(0, 5)
-    
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((defaultValue - min) / (max - min), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderBg
-    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(0, 5)
-    
-    local sliderBtn = Instance.new("TextButton")
-    sliderBtn.Size = UDim2.new(0, 20, 0, 20)
-    sliderBtn.Position = UDim2.new((defaultValue - min) / (max - min), -10, 0.5, -10)
-    sliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderBtn.Text = ""
-    sliderBtn.Parent = sliderBg
-    Instance.new("UICorner", sliderBtn).CornerRadius = UDim.new(1, 0)
-    
-    local function updateValue(value, fromSlider)
-        -- Se vier do slider, limita; se vier do input, permite qualquer valor
-        if fromSlider then
-            value = math.clamp(value, min, max)
-        end
-        
-        if decimals == 0 then
-            value = math.floor(value)
-        else
-            value = math.floor(value * (10^decimals)) / (10^decimals)
-        end
-        
-        local percent = math.clamp((value - min) / (max - min), 0, 1)
-        sliderFill.Size = UDim2.new(percent, 0, 1, 0)
-        sliderBtn.Position = UDim2.new(percent, -10, 0.5, -10)
-        input.Text = tostring(value)
-        return value
-    end
-    
-    local dragging = false
-    sliderBtn.MouseButton1Down:Connect(function()
-        dragging = true
-    end)
-    
-    game:GetService("UserInputService").InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    
-    game:GetService("RunService").RenderStepped:Connect(function()
-        if dragging then
-            local mouse = LocalPlayer:GetMouse()
-            local relativeX = mouse.X - sliderBg.AbsolutePosition.X
-            local percent = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
-            local value = min + (max - min) * percent
-            updateValue(value, true) -- true = vem do slider, limita
-        end
-    end)
-    
-    input.FocusLost:Connect(function()
-        local value = tonumber(input.Text)
-        if value then
-            updateValue(value, false) -- false = vem do input, não limita
-        else
-            input.Text = tostring(defaultValue)
-        end
-    end)
-    
     return {
         getValue = function()
             return tonumber(input.Text) or defaultValue
         end,
-        setValue = function(value)
-            updateValue(value, false)
-        end
+        input = input
     }
 end
 
--- Criar sliders
-createSection(scrollFrame, "📏 POSIÇÃO DE ATAQUE")
-local attackDistSlider = createSlider(scrollFrame, "Distância na frente do NPC", 0, 10, config.attackDistance, 1)
-local attackHeightSlider = createSlider(scrollFrame, "Altura do chão", 0, 5, config.attackHeight, 1)
+-- Criar inputs
+createSection(scrollFrame, "📍 POSIÇÃO DE ATAQUE")
+local offsetXInput = createInput(scrollFrame, "X (Esquerda/Direita)", config.offsetX)
+local offsetYInput = createInput(scrollFrame, "Y (Altura)", config.offsetY)
+local offsetZInput = createInput(scrollFrame, "Z (Frente/Trás)", config.offsetZ)
 
-createSection(scrollFrame, "⚔️ EXECUÇÃO")
-local execHeightSlider = createSlider(scrollFrame, "Altura ao executar", 0, 5, config.executeHeight, 1)
-local execWaitSlider = createSlider(scrollFrame, "Tempo antes de executar (s)", 0, 2, config.executeWaitTime, 1)
-local execCooldownSlider = createSlider(scrollFrame, "Cooldown após executar (s)", 0.5, 5, config.executeCooldown, 1)
+local infoLabel1 = Instance.new("TextLabel")
+infoLabel1.Size = UDim2.new(1, 0, 0, 35)
+infoLabel1.BackgroundTransparency = 1
+infoLabel1.Text = "💡 Z negativo = na frente\nZ positivo = atrás"
+infoLabel1.TextColor3 = Color3.fromRGB(150, 150, 150)
+infoLabel1.TextSize = 10
+infoLabel1.Font = Enum.Font.Gotham
+infoLabel1.TextWrapped = true
+infoLabel1.Parent = scrollFrame
 
-createSection(scrollFrame, "🎯 COMPORTAMENTO")
-local followRangeSlider = createSlider(scrollFrame, "Distância máx. pra seguir", 50, 500, config.followRange, 0)
+createSection(scrollFrame, "⚔️ POSIÇÃO DE EXECUÇÃO")
+local execXInput = createInput(scrollFrame, "X (Esquerda/Direita)", config.executeOffsetX)
+local execYInput = createInput(scrollFrame, "Y (Altura)", config.executeOffsetY)
+local execZInput = createInput(scrollFrame, "Z (Frente/Trás)", config.executeOffsetZ)
+
+createSection(scrollFrame, "⏱️ TIMING")
+local execWaitInput = createInput(scrollFrame, "Delay execução (s)", config.executeWaitTime)
+local execCooldownInput = createInput(scrollFrame, "Cooldown (s)", config.executeCooldown)
+
+createSection(scrollFrame, "🎯 ALCANCE")
+local followRangeInput = createInput(scrollFrame, "Distância máxima", config.followRange)
 
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
 listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -261,7 +204,7 @@ local copyBtn = Instance.new("TextButton")
 copyBtn.Size = UDim2.new(0.48, 0, 1, 0)
 copyBtn.Position = UDim2.new(0.52, 0, 0, 0)
 copyBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
-copyBtn.Text = "📋 Copiar Config"
+copyBtn.Text = "📋 Copiar"
 copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 copyBtn.TextSize = 13
 copyBtn.Font = Enum.Font.GothamBold
@@ -285,16 +228,19 @@ end)
 
 -- Aplicar mudanças
 applyBtn.MouseButton1Click:Connect(function()
-    config.attackDistance = attackDistSlider.getValue()
-    config.attackHeight = attackHeightSlider.getValue()
-    config.executeHeight = execHeightSlider.getValue()
-    config.executeWaitTime = execWaitSlider.getValue()
-    config.executeCooldown = execCooldownSlider.getValue()
-    config.followRange = followRangeSlider.getValue()
+    config.offsetX = offsetXInput.getValue()
+    config.offsetY = offsetYInput.getValue()
+    config.offsetZ = offsetZInput.getValue()
+    config.executeOffsetX = execXInput.getValue()
+    config.executeOffsetY = execYInput.getValue()
+    config.executeOffsetZ = execZInput.getValue()
+    config.executeWaitTime = execWaitInput.getValue()
+    config.executeCooldown = execCooldownInput.getValue()
+    config.followRange = followRangeInput.getValue()
     
     applyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     applyBtn.Text = "✓ Aplicado!"
-    print("Config atualizada em tempo real!")
+    print("Config atualizada!")
     task.wait(1)
     applyBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 250)
     applyBtn.Text = "✓ Aplicar"
@@ -303,29 +249,29 @@ end)
 -- Copiar configurações
 copyBtn.MouseButton1Click:Connect(function()
     local configStr = string.format([[
-attackDistance = %d,  -- Distância na frente do NPC
-attackHeight = %d,    -- Altura do chão
-executeHeight = %d,   -- Altura ao executar
-executeWaitTime = %.1f,  -- Tempo antes de executar
-executeCooldown = %.1f,  -- Cooldown após executar
-followRange = %d,     -- Distância máxima pra seguir]],
-        config.attackDistance,
-        config.attackHeight,
-        config.executeHeight,
-        config.executeWaitTime,
-        config.executeCooldown,
-        config.followRange
+offsetX = %.1f,
+offsetY = %.1f,
+offsetZ = %.1f,
+executeOffsetX = %.1f,
+executeOffsetY = %.1f,
+executeOffsetZ = %.1f,
+executeWaitTime = %.1f,
+executeCooldown = %.1f,
+followRange = %d]],
+        config.offsetX, config.offsetY, config.offsetZ,
+        config.executeOffsetX, config.executeOffsetY, config.executeOffsetZ,
+        config.executeWaitTime, config.executeCooldown, config.followRange
     )
     
     setclipboard(configStr)
     copyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
     copyBtn.Text = "✓ Copiado!"
-    print("\n========== CONFIG COPIADA ==========")
+    print("\n========== CONFIG ==========")
     print(configStr)
-    print("====================================\n")
+    print("============================\n")
     task.wait(1.5)
     copyBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
-    copyBtn.Text = "📋 Copiar Config"
+    copyBtn.Text = "📋 Copiar"
 end)
 
 -- ================== FUNÇÕES DO AUTOFARM ==================
@@ -369,7 +315,7 @@ local function executeSlayer()
     local args = {"Character", "Execute"}
     local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Sync")
     remote:InvokeServer(unpack(args))
-    print("Executed:", followingSlayer.Name)
+    print("Executado:", followingSlayer.Name)
 end
 
 local function attackSlayer(npc)
@@ -383,10 +329,22 @@ local function attackSlayer(npc)
 end
 
 local function getTargetCFrame(root)
-    return CFrame.new(
-        root.Position - root.CFrame.LookVector * config.attackDistance + Vector3.new(0, config.attackHeight, 0), 
-        root.Position
-    )
+    -- Calcula posição baseada no offset XYZ relativo ao NPC
+    local npcCFrame = root.CFrame
+    local offset = Vector3.new(config.offsetX, config.offsetY, config.offsetZ)
+    local worldOffset = npcCFrame:VectorToWorldSpace(offset)
+    local targetPos = root.Position + worldOffset
+    
+    return CFrame.new(targetPos, root.Position)
+end
+
+local function getExecuteCFrame(root)
+    local npcCFrame = root.CFrame
+    local offset = Vector3.new(config.executeOffsetX, config.executeOffsetY, config.executeOffsetZ)
+    local worldOffset = npcCFrame:VectorToWorldSpace(offset)
+    local targetPos = root.Position + worldOffset
+    
+    return CFrame.new(targetPos, root.Position)
 end
 
 local function startAutofarm()
@@ -399,7 +357,7 @@ local function startAutofarm()
         if not followingSlayer or not followingSlayer.Parent then
             followingSlayer = pickClosestSlayer()
             if followingSlayer then
-                print("Seguindo: " .. followingSlayer.Name)
+                print("Seguindo:", followingSlayer.Name)
             else
                 return
             end
@@ -420,7 +378,8 @@ local function startAutofarm()
         else
             if not executing then
                 executing = true
-                hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, config.executeHeight, 0), root.Position)
+                local execCF = getExecuteCFrame(root)
+                hrp.CFrame = execCF
                 task.wait(config.executeWaitTime)
                 executeSlayer()
                 task.delay(config.executeCooldown, function()
@@ -456,5 +415,5 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("AutoFarm com Config Editor carregado!")
-print("Clique no ⚙️ pra ajustar as configs de combate!")
+print("AutoFarm carregado!")
+print("Clique no ⚙️ pra editar posições!")
