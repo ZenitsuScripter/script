@@ -4,32 +4,26 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AutoFarmActive = false
-local currentTarget = nil
+local followingSlayer = nil
 local connection = nil
-local isExecuting = false
-local deadQueue = {}
-
-local alignPos, alignOri, attachment = nil, nil, nil
+local executing = false
+local noclipEnabled = false
+local noclipConnection = nil
 
 -- CONFIGURAÇÕES
-local HEIGHT = 6
-local BACK = 2
-local ANGLE = -70
-local TP_DIST = 50
-local ATTACK_DIST = 10
-local SAFE_RADIUS = 20
-local EXECUTE_WAIT = 2.5
+local TP_DISTANCE = 50        -- Se tiver mais longe que isso, dá TP
+local ATTACK_DISTANCE = 10    -- Só ataca se tiver nessa distância
 
 -- ================== GUI ==================
 local gui = Instance.new("ScreenGui")
-gui.Name = "AutoFarmPro"
+gui.Name = "AutoFarmGui"
 gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 160, 0, 100)
-frame.Position = UDim2.new(0, 10, 0.5, -50)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.Size = UDim2.new(0, 150, 0, 80)
+frame.Position = UDim2.new(0, 10, 0.5, -40)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
 frame.Parent = gui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -37,361 +31,237 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 25)
 title.BackgroundTransparency = 1
-title.Text = "AutoFarm Pro v7"
+title.Text = "AutoFarm"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.GothamBold
 title.Parent = frame
 
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, 0, 0, 15)
-status.Position = UDim2.new(0, 0, 0, 23)
-status.BackgroundTransparency = 1
-status.Text = "Desligado"
-status.TextColor3 = Color3.fromRGB(150, 150, 150)
-status.TextSize = 11
-status.Font = Enum.Font.Gotham
-status.Parent = frame
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0.8, 0, 0, 35)
+toggleBtn.Position = UDim2.new(0.1, 0, 0, 35)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+toggleBtn.Text = "OFF"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.TextSize = 16
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.Parent = frame
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0.85, 0, 0, 35)
-btn.Position = UDim2.new(0.075, 0, 0, 55)
-btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-btn.Text = "DESLIGADO"
-btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-btn.TextSize = 14
-btn.Font = Enum.Font.GothamBold
-btn.Parent = frame
-Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+-- ================== FUNÇÕES ORIGINAIS ==================
+local function getRoot(model)
+    return model:FindFirstChild("HumanoidRootPart") 
+        or model:FindFirstChild("Torso") 
+        or model:FindFirstChild("UpperTorso")
+end
 
--- ================== HELPERS ==================
-local function getHRP()
+local function getHealth(model)
+    return model:FindFirstChild("Health")
+end
+
+local function pickRandomSlayer()
+    local slayers = {}
+    for _, npc in ipairs(workspace:GetChildren()) do
+        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
+            local root = getRoot(npc)
+            local health = getHealth(npc)
+            if root and health and health.Value > 0 then
+                table.insert(slayers, npc)
+            end
+        end
+    end
+    if #slayers == 0 then return nil end
+    return slayers[math.random(1, #slayers)]
+end
+
+-- MELHORIA: Pega o mais próximo em vez de aleatório
+local function pickClosestSlayer()
     local char = LocalPlayer.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
-local function getRoot(m)
-    return m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Torso") or m:FindFirstChild("UpperTorso")
-end
-
-local function getHealthValue(m)
-    local h = m:FindFirstChild("Health")
-    if h then return h.Value end
-    return -1
-end
-
-local function dist(a, b)
-    return (a - b).Magnitude
-end
-
--- ================== REMOTES (igual original) ==================
-local remotes = ReplicatedStorage:WaitForChild("Remotes")
-
-local function doAttack(npc)
-    local async = remotes:WaitForChild("Async")
-    if npc:FindFirstChild("Block") then
-        async:FireServer("Katana", "Heavy")
-    else
-        async:FireServer("Katana", "Server")
-    end
-end
-
-local function doExecute()
-    local sync = remotes:WaitForChild("Sync")
-    sync:InvokeServer("Character", "Execute")
-end
-
--- ================== MOVIMENTO ==================
-local function setupMovement()
-    local hrp = getHRP()
-    if not hrp then return end
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
     
-    if attachment then attachment:Destroy() end
-    if alignPos then alignPos:Destroy() end
-    if alignOri then alignOri:Destroy() end
-    
-    attachment = Instance.new("Attachment")
-    attachment.Parent = hrp
-    
-    alignPos = Instance.new("AlignPosition")
-    alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
-    alignPos.Attachment0 = attachment
-    alignPos.MaxForce = 100000
-    alignPos.MaxVelocity = 80
-    alignPos.Responsiveness = 30
-    alignPos.Parent = hrp
-    
-    alignOri = Instance.new("AlignOrientation")
-    alignOri.Mode = Enum.OrientationAlignmentMode.OneAttachment
-    alignOri.Attachment0 = attachment
-    alignOri.MaxTorque = 100000
-    alignOri.Responsiveness = 30
-    alignOri.Parent = hrp
-end
-
-local function clearMovement()
-    if attachment then attachment:Destroy() attachment = nil end
-    if alignPos then alignPos:Destroy() alignPos = nil end
-    if alignOri then alignOri:Destroy() alignOri = nil end
-end
-
-local function getFarmCF(npcRoot)
-    local pos = npcRoot.Position
-    local look = npcRoot.CFrame.LookVector
-    local targetPos = pos + Vector3.new(0, HEIGHT, 0) - (look * BACK)
-    local cf = CFrame.new(targetPos, pos)
-    return cf * CFrame.Angles(math.rad(ANGLE), 0, 0)
-end
-
--- ================== BUSCA ==================
-local function findClosestAlive()
-    local hrp = getHRP()
-    if not hrp then return nil, nil, math.huge end
-    
-    local closest, closestRoot, closestDist = nil, nil, math.huge
+    local closest = nil
+    local closestDist = math.huge
     
     for _, npc in ipairs(workspace:GetChildren()) do
         if npc.Name == "GenericSlayer" and npc:IsA("Model") then
             local root = getRoot(npc)
-            local hp = getHealthValue(npc)
-            
-            if root and hp > 0 then
-                local d = dist(hrp.Position, root.Position)
-                if d < closestDist then
+            local health = getHealth(npc)
+            if root and health and health.Value > 0 then
+                local dist = (root.Position - hrp.Position).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
                     closest = npc
-                    closestRoot = root
-                    closestDist = d
                 end
             end
         end
     end
-    
-    return closest, closestRoot, closestDist
+    return closest, closestDist
 end
 
-local function hasAliveNear(position)
-    for _, npc in ipairs(workspace:GetChildren()) do
-        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
-            local root = getRoot(npc)
-            local hp = getHealthValue(npc)
-            if root and hp > 0 then
-                if dist(root.Position, position) <= SAFE_RADIUS then
-                    return true
-                end
-            end
-        end
-    end
-    return false
+local function executeSlayer()
+    if not followingSlayer then return end
+    local args = {"Character", "Execute"}
+    local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Sync")
+    remote:InvokeServer(unpack(args))
+    print("Executed:", followingSlayer.Name)
 end
 
-local function findExecutableDead()
-    local hrp = getHRP()
-    if not hrp then return nil, nil end
-    
-    for _, npc in ipairs(workspace:GetChildren()) do
-        if npc.Name == "GenericSlayer" and npc:IsA("Model") then
-            local root = getRoot(npc)
-            local hp = getHealthValue(npc)
-            
-            if root and hp ~= -1 and hp <= 0 then
-                local pos = root.Position
-                if not hasAliveNear(pos) then
-                    return npc, pos
-                end
-            end
-        end
+local function attackSlayer(npc)
+    if executing then return end
+    local attackRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Async")
+    if npc:FindFirstChild("Block") then
+        attackRemote:FireServer("Katana", "Heavy")
+    else
+        attackRemote:FireServer("Katana", "Server")
     end
-    
-    return nil, nil
 end
 
--- ================== EXECUÇÃO ==================
-local function tryExecute(npc, pos)
-    if isExecuting then return end
-    isExecuting = true
+-- NOCLIP
+local function enableNoclip()
+    if noclipEnabled then return end
+    noclipEnabled = true
     
-    status.Text = "Executando..."
-    print(">>> Executando slayer")
-    
-    local hrp = getHRP()
-    if not hrp then
-        isExecuting = false
-        return
-    end
-    
-    -- Desliga movimento suave
-    if alignPos then alignPos.Enabled = false end
-    if alignOri then alignOri.Enabled = false end
-    
-    -- TP pra perto (2 studs acima)
-    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2, 0), pos)
-    task.wait(0.3)
-    
-    -- Checa se ainda seguro
-    if hasAliveNear(pos) then
-        print(">>> Cancelado - vivo perto!")
-        if alignPos then alignPos.Enabled = true end
-        if alignOri then alignOri.Enabled = true end
-        isExecuting = false
-        return
-    end
-    
-    -- Executa
-    doExecute()
-    print(">>> Execute chamado!")
-    
-    task.wait(EXECUTE_WAIT)
-    
-    if alignPos then alignPos.Enabled = true end
-    if alignOri then alignOri.Enabled = true end
-    isExecuting = false
-end
-
--- ================== LOOP PRINCIPAL ==================
-local function mainLoop()
-    if not AutoFarmActive then return end
-    if isExecuting then return end
-    
-    local hrp = getHRP()
-    if not hrp then return end
-    
-    if not alignPos or not alignPos.Parent then
-        setupMovement()
-    end
-    
-    -- 1. PROCURA VIVO
-    local npc, root, d = findClosestAlive()
-    
-    if npc and root then
-        local hp = getHealthValue(npc)
+    noclipConnection = RunService.Stepped:Connect(function()
+        if not noclipEnabled then return end
+        local char = LocalPlayer.Character
+        if not char then return end
         
-        -- VIVO - ATACA
-        if hp > 0 then
-            currentTarget = npc
-            
-            -- TP se longe
-            if d > TP_DIST then
-                status.Text = "TP..."
-                hrp.CFrame = getFarmCF(root)
-                return
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
             end
-            
-            -- Move suave
-            local cf = getFarmCF(root)
-            alignPos.Position = cf.Position
-            alignOri.CFrame = cf
-            
-            -- Ataca se perto
-            if d <= ATTACK_DIST then
-                status.Text = "Atacando"
-                doAttack(npc)
-            else
-                status.Text = "Indo..."
-            end
-            return
         end
+    end)
+    print("Noclip ON")
+end
+
+local function disableNoclip()
+    if not noclipEnabled then return end
+    noclipEnabled = false
+    
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
     end
     
-    -- 2. SEM VIVO - TENTA EXECUTAR
-    currentTarget = nil
+    -- Restaura colisão
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+    end
+    print("Noclip OFF")
+end
+
+-- MELHORIA: Posição com Lerp pra não tremer
+local lastCFrame = nil
+
+local function getTargetCFrame(root)
+    return CFrame.new(root.Position - root.CFrame.LookVector * 2 + Vector3.new(0, 1, 0), root.Position)
+end
+
+local function startAutofarm()
+    lastCFrame = nil
     
-    -- Primeiro da fila
-    if #deadQueue > 0 then
-        local data = deadQueue[1]
-        if data.npc and data.npc.Parent then
-            local hp = getHealthValue(data.npc)
-            if hp <= 0 and not hasAliveNear(data.pos) then
-                table.remove(deadQueue, 1)
-                tryExecute(data.npc, data.pos)
+    connection = RunService.RenderStepped:Connect(function(dt)
+        if not AutoFarmActive then return end
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = char.HumanoidRootPart
+
+        if not followingSlayer then
+            followingSlayer, _ = pickClosestSlayer()
+            if followingSlayer then
+                print("Now following: " .. followingSlayer.Name)
+            else
                 return
+            end
+        end
+
+        local root = getRoot(followingSlayer)
+        local health = getHealth(followingSlayer)
+        if not root or not health then 
+            followingSlayer = nil
+            return 
+        end
+
+        -- Calcula posição alvo
+        local targetCF = getTargetCFrame(root)
+        local dist = (hrp.Position - root.Position).Magnitude
+
+        -- MELHORIA: TP se muito longe, senão anda com noclip
+        if dist > TP_DISTANCE then
+            enableNoclip()
+            -- Move em direção ao alvo
+            local direction = (targetCF.Position - hrp.Position).Unit
+            hrp.CFrame = hrp.CFrame + direction * 2 -- Move 2 studs por frame
+            return
+        else
+            -- Chegou perto, desativa noclip
+            disableNoclip()
+        end
+
+        -- MELHORIA: Lerp pra suavizar (não treme)
+        if lastCFrame then
+            local lerpSpeed = math.clamp(dt * 15, 0.1, 0.5)
+            hrp.CFrame = lastCFrame:Lerp(targetCF, lerpSpeed)
+            lastCFrame = hrp.CFrame
+        else
+            hrp.CFrame = targetCF
+            lastCFrame = targetCF
+        end
+
+        if health.Value > 0 then
+            -- MELHORIA: Só ataca se tiver perto
+            if dist <= ATTACK_DISTANCE then
+                attackSlayer(followingSlayer)
             end
         else
-            table.remove(deadQueue, 1)
-        end
-    end
-    
-    -- Procura qualquer morto executável
-    local deadNpc, deadPos = findExecutableDead()
-    if deadNpc then
-        tryExecute(deadNpc, deadPos)
-        return
-    end
-    
-    status.Text = "Procurando..."
-end
-
--- Loop separado pra detectar morte do alvo
-local function deathCheck()
-    if not AutoFarmActive then return end
-    if not currentTarget then return end
-    
-    local hp = getHealthValue(currentTarget)
-    if hp ~= -1 and hp <= 0 then
-        local root = getRoot(currentTarget)
-        if root then
-            -- Verifica se já tá na fila
-            local found = false
-            for _, d in ipairs(deadQueue) do
-                if d.npc == currentTarget then found = true break end
-            end
-            
-            if not found then
-                print(">>> Alvo morreu! Adicionando na fila")
-                table.insert(deadQueue, {npc = currentTarget, pos = root.Position})
+            if not executing then
+                executing = true
+                -- MELHORIA: Para de mover e executa
+                hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 2, 0), root.Position)
+                task.wait(0.3)
+                executeSlayer()
+                task.delay(2, function()
+                    executing = false
+                    followingSlayer = nil
+                    lastCFrame = nil
+                end)
             end
         end
-        currentTarget = nil
-    end
-end
-
--- ================== CONTROLE ==================
-local function start()
-    setupMovement()
-    deadQueue = {}
-    currentTarget = nil
-    
-    -- Executa mortos ao ligar
-    local deadNpc, deadPos = findExecutableDead()
-    if deadNpc then
-        tryExecute(deadNpc, deadPos)
-    end
-    
-    connection = RunService.Heartbeat:Connect(function()
-        deathCheck()
-        mainLoop()
     end)
 end
 
-local function stop()
+local function stopAutofarm()
     if connection then
         connection:Disconnect()
         connection = nil
     end
-    clearMovement()
-    currentTarget = nil
-    deadQueue = {}
-    isExecuting = false
-    status.Text = "Desligado"
+    disableNoclip()
+    followingSlayer = nil
+    executing = false
+    lastCFrame = nil
 end
 
 -- ================== TOGGLE ==================
-btn.MouseButton1Click:Connect(function()
+toggleBtn.MouseButton1Click:Connect(function()
     AutoFarmActive = not AutoFarmActive
     
     if AutoFarmActive then
-        btn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-        btn.Text = "LIGADO"
-        start()
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        toggleBtn.Text = "ON"
+        startAutofarm()
     else
-        btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        btn.Text = "DESLIGADO"
-        stop()
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        toggleBtn.Text = "OFF"
+        stopAutofarm()
     end
 end)
 
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    if AutoFarmActive then setupMovement() end
-end)
-
-print("AutoFarm Pro v7 carregado!")
+print("AutoFarm carregado! Clique no botão para ativar.")
